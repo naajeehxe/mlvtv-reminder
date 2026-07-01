@@ -32,10 +32,17 @@ CHANNEL = os.environ["SLACK_CHANNEL_ID"]  # #general_student 채널 ID (C...)
 MYBOX_LINK = "https://mybox.naver.com/main/web/shared?resourceKey=aGtpbWN2bWx8MzQ3MjUzMjEzODk2MjkyNDM2MXxEfDEzMzY3Mzcw"
 NOTION_LINK = "https://www.notion.so/325a6dfcb578468d8f2d474c3f9c8cd5?v=2c966beed4be4920b76169d61e207383"
 
-P_TITLE, P_DEADLINE, P_SLACK_ID, P_STATUS = "제목", "MLVTV 마감", "Slack ID", "상태"
+P_TITLE, P_DEADLINE, P_SLACK_ID = "제목", "MLVTV 마감", "Slack ID"
 P_ASSIGNEE = "담당자"
 P_VENUE = "학회"
 STATUS_DONE = "제출완료"
+
+# 체크할 제출 항목: (표시이름, Notion 속성명)
+DELIVERABLES = [
+    ("영상", "영상 상태"),
+    ("코드", "코드 상태"),
+    ("poster PDF", "poster PDF 상태"),
+]
 
 HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -88,14 +95,32 @@ def get_data_source_id(database_id):
     return r.json()["data_sources"][0]["id"]
 
 
-def query_pending(data_source_id):
-    payload = {"filter": {"property": P_STATUS,
-                          "select": {"does_not_equal": STATUS_DONE}}}
-    r = requests.post(
-        f"https://api.notion.com/v1/data_sources/{data_source_id}/query",
-        headers=HEADERS, json=payload)
-    r.raise_for_status()
-    return r.json()["results"]
+def query_all(data_source_id):
+    """모든 행을 가져온다(미완 판단은 파이썬에서)."""
+    results, cursor = [], None
+    while True:
+        payload = {"page_size": 100}
+        if cursor:
+            payload["start_cursor"] = cursor
+        r = requests.post(
+            f"https://api.notion.com/v1/data_sources/{data_source_id}/query",
+            headers=HEADERS, json=payload)
+        r.raise_for_status()
+        data = r.json()
+        results.extend(data["results"])
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+    return results
+
+
+def pending_items(page):
+    """이 행에서 아직 '제출완료'가 아닌 항목 이름 목록. 예: ['영상', 'poster PDF']"""
+    todo = []
+    for label, prop in DELIVERABLES:
+        if prop_text(page, prop) != STATUS_DONE:
+            todo.append(label)
+    return todo
 
 
 def prop_text(page, name):
@@ -141,9 +166,9 @@ def status_label(deadline):
     return f"{over}일 경과했습니다"
 
 
-def build_channel_message(rows):
-    lines = ["📋 *[MLVTV] 이번 주 영상 미제출 현황*", ""]
-    for page in rows:
+def build_channel_message(rows_with_todo):
+    lines = ["📋 *[MLVTV] 이번 주 제출 현황*", ""]
+    for page, todo in rows_with_todo:
         title = prop_text(page, P_TITLE)
         slack_id = prop_text(page, P_SLACK_ID)
         assignee = prop_text(page, P_ASSIGNEE)
@@ -159,11 +184,20 @@ def build_channel_message(rows):
                 print(f"  ⚠️ '{assignee}' Slack 계정을 못 찾음 "
                       f"(이름이 Slack 표시이름과 다르거나 미가입). 멘션 없이 표시.")
         venue_tag = f"[{venue}] " if venue else ""
-        lines.append(f"• {who}  {venue_tag}'{title}' — {status_label(deadline)}")
+        lines.append(f"• {who}  {venue_tag}'{title}' ({status_label(deadline)})")
+
+        # 항목별 체크 줄
+        marks = []
+        for label, prop in DELIVERABLES:
+            done = prop_text(page, prop) == STATUS_DONE
+            marks.append(f"{'✅' if done else '❌'} {label}")
+        lines.append("    " + "  ".join(marks))
+
     lines.append("")
-    lines.append(f"발표 슬라이드(pptx)에 발표 녹화를 넣은 형태로 저장해, "
-                 f"<{MYBOX_LINK}|Mybox 폴더>에 업로드 부탁드려요. "
-                 f"업로드 후 <{NOTION_LINK}|Notion>에서 상태를 '제출완료'로 바꿔주세요 🙏")
+    lines.append(f"발표 슬라이드(pptx)에 발표 녹화를 넣은 형태로 저장해 "
+                 f"<{MYBOX_LINK}|Mybox 폴더>에 업로드하고, 코드·poster PDF도 함께 제출해 주세요.")
+    lines.append(f"제출 후 <{NOTION_LINK}|Notion>에서 해당 항목 상태를 '제출완료'로 바꿔주세요 🙏")
+    lines.append("_상태를 업데이트하지 않으면 완료될 때까지 매주 이 알림이 계속 갑니다._")
     return "\n".join(lines)
 
 
@@ -181,14 +215,17 @@ def main():
         print(">>> DRY_RUN 모드: 슬랙엔 아무것도 안 올라갑니다. 터미널 미리보기만.\n")
 
     ds = get_data_source_id(DATABASE_ID)
-    rows = query_pending(ds)
-    print(f"미제출 {len(rows)}건 확인\n")
+    rows = query_all(ds)
 
-    if not rows:
-        print("미제출 없음 — 알림 보낼 것 없음 ✅")
+    # 하나라도 미완인 행만 추림
+    pending = [(page, todo) for page in rows if (todo := pending_items(page))]
+    print(f"전체 {len(rows)}건 중 미완 {len(pending)}건\n")
+
+    if not pending:
+        print("모두 제출완료 — 알림 보낼 것 없음 ✅")
         return
 
-    send(CHANNEL, build_channel_message(rows))
+    send(CHANNEL, build_channel_message(pending))
 
 
 if __name__ == "__main__":
