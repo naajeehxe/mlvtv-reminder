@@ -30,7 +30,7 @@ CHANNEL = os.environ["SLACK_CHANNEL_ID"]  # #general_student 채널 ID (C...)
 
 # 문구에 넣을 링크 (여기만 바꾸면 됨)
 MYBOX_LINK = "https://mybox.naver.com/main/web/shared?resourceKey=aGtpbWN2bWx8MzQ3MjUzMjEzODk2MjkyNDM2MXxEfDEzMzY3Mzcw"
-NOTION_LINK = "https://app.notion.com/p/325a6dfcb578468d8f2d474c3f9c8cd5?v=2c966beed4be4920b76169d61e207383"
+NOTION_LINK = "https://www.notion.so/325a6dfcb578468d8f2d474c3f9c8cd5?v=2c966beed4be4920b76169d61e207383"
 
 P_TITLE, P_DEADLINE, P_SLACK_ID, P_STATUS = "제목", "MLVTV 마감", "Slack ID", "상태"
 P_ASSIGNEE = "담당자"
