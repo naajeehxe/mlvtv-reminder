@@ -1,0 +1,22 @@
+name: mlvtv-reminder
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"   # 매주 월요일 UTC 00:00 = 한국시간 월요일 오전 9시
+  workflow_dispatch: {}     # Actions 탭에서 버튼으로 수동 실행(테스트용)
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests slack_sdk
+      - run: python reminder_bot.py
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
