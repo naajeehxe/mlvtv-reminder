@@ -35,7 +35,7 @@ NOTION_LINK = "https://www.notion.so/325a6dfcb578468d8f2d474c3f9c8cd5?v=2c966bee
 P_TITLE, P_DEADLINE, P_SLACK_ID = "제목", "MLVTV 마감", "Slack ID"
 P_ASSIGNEE = "담당자"
 P_VENUE = "학회"
-STATUS_DONE = "제출완료"
+STATUS_DONE = "제출 완료"
 
 # 체크할 제출 항목: (표시이름, Notion 속성명)
 DELIVERABLES = [
@@ -196,7 +196,7 @@ def build_channel_message(rows_with_todo):
     lines.append("")
     lines.append(f"발표 슬라이드(pptx)에 발표 녹화를 넣은 형태로 저장해 "
                  f"<{MYBOX_LINK}|Mybox 폴더>에 업로드하고, 코드·poster PDF도 함께 제출해 주세요.")
-    lines.append(f"제출 후 <{NOTION_LINK}|Notion>에서 해당 항목 상태를 '제출완료'로 바꿔주세요 🙏")
+    lines.append(f"제출 후 <{NOTION_LINK}|Notion>에서 해당 항목 상태를 *`제출 완료`* 로 바꿔주세요 🙏")
     lines.append("_상태를 업데이트하지 않으면 완료될 때까지 매주 이 알림이 계속 갑니다._")
     return "\n".join(lines)
 
