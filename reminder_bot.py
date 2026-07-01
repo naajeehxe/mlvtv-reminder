@@ -33,6 +33,8 @@ MYBOX_LINK = "https://mybox.naver.com/main/web/shared?resourceKey=aGtpbWN2bWx8Mz
 NOTION_LINK = "https://app.notion.com/p/325a6dfcb578468d8f2d474c3f9c8cd5?v=2c966beed4be4920b76169d61e207383"
 
 P_TITLE, P_DEADLINE, P_SLACK_ID, P_STATUS = "제목", "MLVTV 마감", "Slack ID", "상태"
+P_ASSIGNEE = "담당자"
+P_VENUE = "학회"
 STATUS_DONE = "제출완료"
 
 HEADERS = {
@@ -40,6 +42,42 @@ HEADERS = {
     "Notion-Version": NOTION_VERSION,
     "Content-Type": "application/json",
 }
+
+
+# ---------------------------------------------------------------- Slack 이름->ID 매핑
+_slack_directory = None  # {소문자이름: 멤버ID}
+
+
+def build_slack_directory():
+    """워크스페이스 구성원의 실명/표시이름 -> 멤버ID 딕셔너리를 만든다."""
+    directory = {}
+    cursor = None
+    while True:
+        resp = slack.users_list(cursor=cursor, limit=200)
+        for m in resp["members"]:
+            if m.get("deleted") or m.get("is_bot"):
+                continue
+            prof = m.get("profile", {})
+            for key in (m.get("name"), prof.get("real_name"),
+                        prof.get("display_name")):
+                if key:
+                    directory[key.strip().lower()] = m["id"]
+        cursor = resp.get("response_metadata", {}).get("next_cursor")
+        if not cursor:
+            break
+    return directory
+
+
+def resolve_slack_id(slack_id, assignee):
+    """Slack ID가 있으면 그대로, 없으면 담당자 이름으로 자동 매핑."""
+    global _slack_directory
+    if slack_id:
+        return slack_id
+    if not assignee:
+        return ""
+    if _slack_directory is None:
+        _slack_directory = build_slack_directory()
+    return _slack_directory.get(assignee.strip().lower(), "")
 
 
 # ---------------------------------------------------------------- Notion
@@ -108,12 +146,24 @@ def build_channel_message(rows):
     for page in rows:
         title = prop_text(page, P_TITLE)
         slack_id = prop_text(page, P_SLACK_ID)
+        assignee = prop_text(page, P_ASSIGNEE)
+        venue = prop_text(page, P_VENUE)
         deadline = prop_date(page, P_DEADLINE)
-        who = f"<@{slack_id}>" if slack_id else "(담당자 미지정)"
-        lines.append(f"• {who}  '{title}' — {status_label(deadline)}")
+
+        uid = resolve_slack_id(slack_id, assignee)
+        if uid:
+            who = f"<@{uid}>"
+        else:
+            who = assignee or "(담당자 미지정)"
+            if assignee:
+                print(f"  ⚠️ '{assignee}' Slack 계정을 못 찾음 "
+                      f"(이름이 Slack 표시이름과 다르거나 미가입). 멘션 없이 표시.")
+        venue_tag = f"[{venue}] " if venue else ""
+        lines.append(f"• {who}  {venue_tag}'{title}' — {status_label(deadline)}")
     lines.append("")
-    lines.append(f"영상을 <{MYBOX_LINK}|Mybox 폴더>에 올린 뒤, "
-                 f"<{NOTION_LINK}|Notion>에서 상태를 '제출완료'로 바꿔주세요 🙏")
+    lines.append(f"발표 슬라이드(pptx)에 발표 녹화를 넣은 형태로 저장해, "
+                 f"<{MYBOX_LINK}|Mybox 폴더>에 업로드 부탁드려요. "
+                 f"업로드 후 <{NOTION_LINK}|Notion>에서 상태를 '제출완료'로 바꿔주세요 🙏")
     return "\n".join(lines)
 
 
