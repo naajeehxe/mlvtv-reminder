@@ -233,7 +233,10 @@ def send(channel, text, image_url=None):
         return
     if image_url:
         blocks = [
-            {"type": "image", "image_url": image_url, "alt_text": "독촉이"},
+            {"type": "context", "elements": [
+                {"type": "image", "image_url": image_url, "alt_text": "독촉이"},
+                {"type": "mrkdwn", "text": " *독촉이 출동!*"},
+            ]},
             {"type": "section", "text": {"type": "mrkdwn", "text": text}},
         ]
         slack.chat_postMessage(channel=channel, text=text, blocks=blocks)
