@@ -228,20 +228,14 @@ def build_channel_message(rows_with_todo):
 # ---------------------------------------------------------------- Slack (DRY_RUN 지원)
 def send(channel, text, image_url=None):
     if DRY_RUN:
-        extra = f"\n[상단 이미지] {image_url}" if image_url else ""
+        extra = f"\n[봇 아이콘] {image_url}" if image_url else ""
         print(f"[DRY_RUN] 슬랙에 올리지 않음. 아래는 미리보기입니다.\n-> {channel}{extra}\n{text}")
         return
+    kwargs = {"channel": channel, "text": text}
     if image_url:
-        blocks = [
-            {"type": "context", "elements": [
-                {"type": "image", "image_url": image_url, "alt_text": "독촉이"},
-                {"type": "mrkdwn", "text": " *독촉이 출동!*"},
-            ]},
-            {"type": "section", "text": {"type": "mrkdwn", "text": text}},
-        ]
-        slack.chat_postMessage(channel=channel, text=text, blocks=blocks)
-    else:
-        slack.chat_postMessage(channel=channel, text=text)
+        kwargs["icon_url"] = image_url          # 단계별 독촉이를 봇 프로필 사진으로
+        kwargs["username"] = "독촉이"
+    slack.chat_postMessage(**kwargs)
 
 
 # ---------------------------------------------------------------- 메인
