@@ -167,7 +167,7 @@ def status_label(deadline):
 
 
 def build_channel_message(rows_with_todo):
-    lines = ["📋 *[MLVTV] 이번 주 제출 현황*", ""]
+    lines = ["📋 *논문 자료 취합 리마인더*", ""]
     for page, todo in rows_with_todo:
         title = prop_text(page, P_TITLE)
         slack_id = prop_text(page, P_SLACK_ID)
@@ -194,10 +194,11 @@ def build_channel_message(rows_with_todo):
         lines.append("    " + "   ".join(marks))
 
     lines.append("")
-    lines.append(f"영상(pptx에 녹화 삽입)·코드·poster PDF를 "
-                 f"<{MYBOX_LINK}|Mybox>에 올린 뒤, "
-                 f"<{NOTION_LINK}|Notion>에서 상태를 *`제출 완료`* 로 바꿔주세요 🙏")
-    lines.append("_완료 표시 전까지 매주 알림이 계속 갑니다._")
+    lines.append(f"위 미완 항목을 *기한 내에* 제출해 주시기 바랍니다. "
+                 f"영상(pptx에 녹화를 첨부하여 제출)·코드·poster PDF를 "
+                 f"<{MYBOX_LINK}|Mybox>에 업로드한 뒤, 반드시 "
+                 f"<{NOTION_LINK}|Notion>에서 상태를 *`제출 완료`* 로 변경해야 합니다.")
+    lines.append("_제출 완료로 변경하지 않으면 완료될 때까지 매주 리마인더가 발송됩니다._")
     return "\n".join(lines)
 
 
