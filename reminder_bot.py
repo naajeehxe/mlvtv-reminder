@@ -167,7 +167,8 @@ def status_label(deadline):
 
 
 def build_channel_message(rows_with_todo):
-    lines = ["📋 *[MLVTV] 이번 주 제출 현황*", ""]
+    lines = ["📋 *[MLVTV] 이번 주 제출 현황*",
+             "─────────────────────", ""]
     for page, todo in rows_with_todo:
         title = prop_text(page, P_TITLE)
         slack_id = prop_text(page, P_SLACK_ID)
@@ -183,17 +184,19 @@ def build_channel_message(rows_with_todo):
             if assignee:
                 print(f"  ⚠️ '{assignee}' Slack 계정을 못 찾음 "
                       f"(이름이 Slack 표시이름과 다르거나 미가입). 멘션 없이 표시.")
-        venue_tag = f"[{venue}] " if venue else ""
-        lines.append(f"• {who}  {venue_tag}'{title}' ({status_label(deadline)})")
+        venue_tag = f"*[{venue}]*  " if venue else ""
+        lines.append(f"{venue_tag}{title}")
+        lines.append(f"└ {who} · {status_label(deadline)}")
 
         # 항목별 체크 줄
         marks = []
         for label, prop in DELIVERABLES:
             done = prop_text(page, prop) == STATUS_DONE
             marks.append(f"{'✅' if done else '❌'} {label}")
-        lines.append("    " + "  ".join(marks))
+        lines.append("    " + "   ".join(marks))
+        lines.append("")
 
-    lines.append("")
+    lines.append("─────────────────────")
     lines.append(f"발표 슬라이드(pptx)에 발표 녹화를 넣은 형태로 저장해 "
                  f"<{MYBOX_LINK}|Mybox 폴더>에 업로드하고, 코드·poster PDF도 함께 제출해 주세요.")
     lines.append(f"제출 후 <{NOTION_LINK}|Notion>에서 해당 항목 상태를 *`제출 완료`* 로 바꿔주세요 🙏")
