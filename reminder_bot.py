@@ -32,6 +32,29 @@ CHANNEL = os.environ["SLACK_CHANNEL_ID"]  # #general_student 채널 ID (C...)
 MYBOX_LINK = "https://mybox.naver.com/main/web/shared?resourceKey=aGtpbWN2bWx8MzQ3MjUzMjEzODk2MjkyNDM2MXxEfDEzMzY3Mzcw"
 NOTION_LINK = "https://www.notion.so/325a6dfcb578468d8f2d474c3f9c8cd5?v=2c966beed4be4920b76169d61e207383"
 
+# 독촉이 3단계 캐릭터 이미지 (GitHub raw URL로 교체하세요)
+DOKCHOK_IMG = {
+    1: "https://raw.githubusercontent.com/naajeehxe/mlvtv-reminder/main/lv1_icon.png",  # 1주 경과
+    2: "https://raw.githubusercontent.com/naajeehxe/mlvtv-reminder/main/lv2_icon.png",  # 2주 경과
+    3: "https://raw.githubusercontent.com/naajeehxe/mlvtv-reminder/main/lv3_icon.png",  # 3주+ 경과
+}
+
+
+def dokchok_level(rows_with_todo):
+    """미완 행들 중 가장 많이 밀린 경과일 기준으로 1/2/3 단계 반환."""
+    max_over = 0
+    for page, _ in rows_with_todo:
+        deadline = prop_date(page, P_DEADLINE)
+        if deadline:
+            over = -days_until(deadline)   # 마감 지난 일수(+면 경과)
+            max_over = max(max_over, over)
+    if max_over >= 21:
+        return 3
+    if max_over >= 14:
+        return 2
+    return 1
+
+
 P_TITLE, P_DEADLINE, P_SLACK_ID = "제목", "MLVTV 마감", "Slack ID"
 P_ASSIGNEE = "담당자"
 P_VENUE = "학회"
@@ -203,11 +226,19 @@ def build_channel_message(rows_with_todo):
 
 
 # ---------------------------------------------------------------- Slack (DRY_RUN 지원)
-def send(channel, text):
+def send(channel, text, image_url=None):
     if DRY_RUN:
-        print(f"[DRY_RUN] 슬랙에 올리지 않음. 아래는 미리보기입니다.\n-> {channel}\n{text}")
+        extra = f"\n[상단 이미지] {image_url}" if image_url else ""
+        print(f"[DRY_RUN] 슬랙에 올리지 않음. 아래는 미리보기입니다.\n-> {channel}{extra}\n{text}")
         return
-    slack.chat_postMessage(channel=channel, text=text)
+    if image_url:
+        blocks = [
+            {"type": "image", "image_url": image_url, "alt_text": "독촉이"},
+            {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+        ]
+        slack.chat_postMessage(channel=channel, text=text, blocks=blocks)
+    else:
+        slack.chat_postMessage(channel=channel, text=text)
 
 
 # ---------------------------------------------------------------- 메인
@@ -226,7 +257,10 @@ def main():
         print("모두 제출완료 — 알림 보낼 것 없음 ✅")
         return
 
-    send(CHANNEL, build_channel_message(pending))
+    level = dokchok_level(pending)     # 가장 많이 밀린 사람 기준 1/2/3
+    img = DOKCHOK_IMG.get(level)
+    print(f"독촉이 단계: lv{level}")
+    send(CHANNEL, build_channel_message(pending), image_url=img)
 
 
 if __name__ == "__main__":
