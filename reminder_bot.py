@@ -60,6 +60,7 @@ def dokchok_level(rows_with_todo):
 P_TITLE, P_DEADLINE, P_SLACK_ID = "제목", "MLVTV 마감", "Slack ID"
 P_ASSIGNEE = "담당자"
 P_VENUE = "학회"
+P_COUNT = "독촉 횟수"
 STATUS_DONE = "제출 완료"
 
 # 체크할 제출 항목: (표시이름, Notion 속성명)
@@ -167,6 +168,22 @@ def prop_date(page, name):
     return d["start"] if d else None
 
 
+def prop_number(page, name):
+    n = page["properties"].get(name, {}).get("number")
+    return n if isinstance(n, (int, float)) else 0
+
+
+def increment_count(page, current):
+    """이 행의 '독촉 횟수'를 +1 해서 Notion에 저장. (실제 발송 때만 호출)"""
+    page_id = page["id"]
+    r = requests.patch(
+        f"https://api.notion.com/v1/pages/{page_id}",
+        headers=HEADERS,
+        json={"properties": {P_COUNT: {"number": current + 1}}},
+    )
+    r.raise_for_status()
+
+
 def days_until(deadline_str):
     return (datetime.fromisoformat(deadline_str).date() - date.today()).days
 
@@ -224,8 +241,10 @@ def build_channel_message(rows_with_todo):
             title = prop_text(page, P_TITLE)
             venue = prop_text(page, P_VENUE)
             deadline = prop_date(page, P_DEADLINE)
+            count = prop_number(page, P_COUNT) + 1   # 이번 발송 포함
             venue_tag = f"*[{venue}]* " if venue else ""
-            lines.append(f"{_who_label(page)}  {venue_tag}{title} ({status_label(deadline)})")
+            lines.append(f"{_who_label(page)}  {venue_tag}{title} "
+                         f"({status_label(deadline)} · 🔴 {count}회째 독촉)")
             marks = [f"{'✅' if prop_text(page, prop) == STATUS_DONE else '❌'} {label}"
                      for label, prop in DELIVERABLES]
             lines.append("    " + "   ".join(marks))
@@ -284,6 +303,11 @@ def main():
     img = DOKCHOK_IMG.get(level)       # 0이면 None -> 기본 아이콘
     print(f"독촉이 단계: lv{level}")
     send(CHANNEL, build_channel_message(pending), image_url=img)
+
+    # 실제 발송했을 때만 독촉 횟수 +1 (DRY_RUN은 카운트 안 올림)
+    if not DRY_RUN:
+        for page, _ in pending:
+            increment_count(page, prop_number(page, P_COUNT))
 
 
 if __name__ == "__main__":
