@@ -231,16 +231,18 @@ def build_channel_message(rows_with_todo):
             lines.append("    " + "   ".join(marks))
         lines.append("")
 
-    # ⏳ 마감 전 — 가볍게 안내
+    # ⏳ 마감 전 — 학회 단위로 묶어서 간단히 안내
     if upcoming:
         lines.append("⏳ *마감 예정*")
+        groups = {}  # (venue, deadline) -> [who, ...]
         for page, todo in upcoming:
-            title = prop_text(page, P_TITLE)
-            venue = prop_text(page, P_VENUE)
+            venue = prop_text(page, P_VENUE) or "기타"
             deadline = prop_date(page, P_DEADLINE)
-            venue_tag = f"*[{venue}]* " if venue else ""
-            lines.append(f"{_who_label(page)}  {venue_tag}{title} — "
-                         f"*{_fmt_date(deadline)}*까지 업로드 부탁드립니다 🙏")
+            groups.setdefault((venue, deadline), []).append(_who_label(page))
+        for (venue, deadline), whos in groups.items():
+            mentions = " ".join(whos)
+            lines.append(f"*[{venue}]* {mentions} — *{_fmt_date(deadline)}까지* "
+                         f"업로드 부탁드립니다 🙏")
         lines.append("")
 
     lines.append(f"영상(pptx에 녹화를 첨부하여 제출)·코드·poster PDF를 "
