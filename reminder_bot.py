@@ -41,7 +41,7 @@ DOKCHOK_IMG = {
 
 
 def dokchok_level(rows_with_todo):
-    """미완 행들 중 가장 많이 밀린 경과일 기준으로 1/2/3 단계 반환."""
+    """마감 초과 건 기준으로 독촉이 단계 반환. 초과 없으면 0(아이콘 없음)."""
     max_over = 0
     for page, _ in rows_with_todo:
         deadline = prop_date(page, P_DEADLINE)
@@ -52,7 +52,9 @@ def dokchok_level(rows_with_todo):
         return 3
     if max_over >= 14:
         return 2
-    return 1
+    if max_over >= 1:
+        return 1
+    return 0   # 마감 초과 건 없음 -> 기본 아이콘
 
 
 P_TITLE, P_DEADLINE, P_SLACK_ID = "제목", "MLVTV 마감", "Slack ID"
@@ -189,36 +191,59 @@ def status_label(deadline):
     return f"{over}일 경과했습니다"
 
 
+def _who_label(page):
+    slack_id = prop_text(page, P_SLACK_ID)
+    assignee = prop_text(page, P_ASSIGNEE)
+    uid = resolve_slack_id(slack_id, assignee)
+    if uid:
+        return f"<@{uid}>"
+    if assignee:
+        print(f"  ⚠️ '{assignee}' Slack 계정을 못 찾음 "
+              f"(이름이 Slack 표시이름과 다르거나 미가입). 멘션 없이 표시.")
+    return assignee or "(담당자 미지정)"
+
+
+def _fmt_date(deadline):
+    return deadline.replace("-", ".") if deadline else "마감일 미정"
+
+
 def build_channel_message(rows_with_todo):
-    lines = ["📋 *논문 자료 취합 리마인더*", ""]
+    # 마감 전(upcoming) / 마감 초과(overdue)로 분류
+    upcoming, overdue = [], []
     for page, todo in rows_with_todo:
-        title = prop_text(page, P_TITLE)
-        slack_id = prop_text(page, P_SLACK_ID)
-        assignee = prop_text(page, P_ASSIGNEE)
-        venue = prop_text(page, P_VENUE)
         deadline = prop_date(page, P_DEADLINE)
+        d = days_until(deadline) if deadline else 0
+        (overdue if d < 0 else upcoming).append((page, todo))
 
-        uid = resolve_slack_id(slack_id, assignee)
-        if uid:
-            who = f"<@{uid}>"
-        else:
-            who = assignee or "(담당자 미지정)"
-            if assignee:
-                print(f"  ⚠️ '{assignee}' Slack 계정을 못 찾음 "
-                      f"(이름이 Slack 표시이름과 다르거나 미가입). 멘션 없이 표시.")
-        venue_tag = f"*[{venue}]* " if venue else ""
-        lines.append(f"{who}  {venue_tag}{title} ({status_label(deadline)})")
+    lines = ["📋 *논문 자료 취합 리마인더*", ""]
 
-        # 항목별 체크 줄
-        marks = []
-        for label, prop in DELIVERABLES:
-            done = prop_text(page, prop) == STATUS_DONE
-            marks.append(f"{'✅' if done else '❌'} {label}")
-        lines.append("    " + "   ".join(marks))
+    # 🚨 마감 초과 — 독촉이 강하게
+    if overdue:
+        lines.append("🚨 *마감 초과*")
+        for page, todo in overdue:
+            title = prop_text(page, P_TITLE)
+            venue = prop_text(page, P_VENUE)
+            deadline = prop_date(page, P_DEADLINE)
+            venue_tag = f"*[{venue}]* " if venue else ""
+            lines.append(f"{_who_label(page)}  {venue_tag}{title} ({status_label(deadline)})")
+            marks = [f"{'✅' if prop_text(page, prop) == STATUS_DONE else '❌'} {label}"
+                     for label, prop in DELIVERABLES]
+            lines.append("    " + "   ".join(marks))
+        lines.append("")
 
-    lines.append("")
-    lines.append(f"위 미완 항목을 *기한 내에* 제출해 주시기 바랍니다. "
-                 f"영상(pptx에 녹화를 첨부하여 제출)·코드·poster PDF를 "
+    # ⏳ 마감 전 — 가볍게 안내
+    if upcoming:
+        lines.append("⏳ *마감 예정*")
+        for page, todo in upcoming:
+            title = prop_text(page, P_TITLE)
+            venue = prop_text(page, P_VENUE)
+            deadline = prop_date(page, P_DEADLINE)
+            venue_tag = f"*[{venue}]* " if venue else ""
+            lines.append(f"{_who_label(page)}  {venue_tag}{title} — "
+                         f"*{_fmt_date(deadline)}*까지 업로드 부탁드립니다 🙏")
+        lines.append("")
+
+    lines.append(f"영상(pptx에 녹화를 첨부하여 제출)·코드·poster PDF를 "
                  f"<{MYBOX_LINK}|Mybox>에 업로드한 뒤, 반드시 "
                  f"<{NOTION_LINK}|Notion>에서 상태를 *`제출 완료`* 로 변경해야 합니다.")
     lines.append("_제출 완료로 변경하지 않으면 완료될 때까지 매주 리마인더가 발송됩니다._")
@@ -233,8 +258,7 @@ def send(channel, text, image_url=None):
         return
     kwargs = {"channel": channel, "text": text}
     if image_url:
-        kwargs["icon_url"] = image_url          # 단계별 독촉이를 봇 프로필 사진으로
-        kwargs["username"] = "독촉이"
+        kwargs["icon_url"] = image_url          # 단계별 독촉이 아이콘만 교체
     slack.chat_postMessage(**kwargs)
 
 
@@ -254,8 +278,8 @@ def main():
         print("모두 제출완료 — 알림 보낼 것 없음 ✅")
         return
 
-    level = dokchok_level(pending)     # 가장 많이 밀린 사람 기준 1/2/3
-    img = DOKCHOK_IMG.get(level)
+    level = dokchok_level(pending)     # 마감 초과 기준 1/2/3, 없으면 0
+    img = DOKCHOK_IMG.get(level)       # 0이면 None -> 기본 아이콘
     print(f"독촉이 단계: lv{level}")
     send(CHANNEL, build_channel_message(pending), image_url=img)
 
