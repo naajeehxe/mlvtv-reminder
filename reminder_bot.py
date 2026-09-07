@@ -1,10 +1,12 @@
 """
-MLVTV 영상 제출 독촉 봇 (v5)
+MLVTV 영상 제출 독촉 봇 (v6)
 - 상태가 '제출완료'가 아닌 행을 모아 #general_student 채널에 '미제출 현황' 1개 글로 게시
 - 각 줄에 @멘션 + 얼마나 밀렸는지(예: 3주 경과 / 마감 2일 전) 표시
 - 매주 실행하도록 스케줄하면 => 제출완료 될 때까지 매주 리마인드
 - DRY_RUN=1 이면 슬랙에 아무것도 안 올리고 터미널에만 미리보기 출력
 
+v6 변경점:
+  발표 자료 양식(Notion) 링크 안내 문구 추가.
 v5 변경점:
   '독촉 횟수'를 마감 초과(overdue) 건에만 +1 한다.
   이전 버전은 마감 예정(안내만 한 건)까지 카운트를 올려서,
@@ -36,6 +38,7 @@ CHANNEL = os.environ["SLACK_CHANNEL_ID"]  # #general_student 채널 ID (C...)
 # 문구에 넣을 링크 (여기만 바꾸면 됨)
 MYBOX_LINK = "https://mybox.naver.com/main/web/shared?resourceKey=aGtpbWN2bWx8MzQ3MjUzMjEzODk2MjkyNDM2MXxEfDEzMzY3Mzcw"
 NOTION_LINK = "https://www.notion.so/325a6dfcb578468d8f2d474c3f9c8cd5?v=2c966beed4be4920b76169d61e207383"
+TEMPLATE_LINK = "https://www.notion.so/mlvku/265587eaf1a28248a04d01bcf176c8d7?source=copy_link#f0f587eaf1a282b3a242018b27a66187"
 
 # 독촉이 3단계 캐릭터 이미지 (GitHub raw URL로 교체하세요)
 DOKCHOK_IMG = {
@@ -282,6 +285,7 @@ def build_channel_message(rows_with_todo):
     lines.append(f"영상(pptx에 녹화를 첨부하여 제출)·코드·poster PDF를 "
                  f"<{MYBOX_LINK}|Mybox>에 업로드한 뒤, 반드시 "
                  f"<{NOTION_LINK}|Notion>에서 상태를 *`제출 완료`* 로 변경해야 합니다.")
+    lines.append(f"발표 자료 양식은 <{TEMPLATE_LINK}|링크>를 참고해 주세요.")
     lines.append("_제출 완료로 변경하지 않으면 완료될 때까지 매주 리마인더가 발송됩니다._")
     return "\n".join(lines)
 
