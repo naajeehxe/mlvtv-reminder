@@ -1,9 +1,14 @@
 """
-MLVTV 영상 제출 독촉 봇 (v4)
+MLVTV 영상 제출 독촉 봇 (v5)
 - 상태가 '제출완료'가 아닌 행을 모아 #general_student 채널에 '미제출 현황' 1개 글로 게시
 - 각 줄에 @멘션 + 얼마나 밀렸는지(예: 3주 경과 / 마감 2일 전) 표시
 - 매주 실행하도록 스케줄하면 => 제출완료 될 때까지 매주 리마인드
 - DRY_RUN=1 이면 슬랙에 아무것도 안 올리고 터미널에만 미리보기 출력
+
+v5 변경점:
+  '독촉 횟수'를 마감 초과(overdue) 건에만 +1 한다.
+  이전 버전은 마감 예정(안내만 한 건)까지 카운트를 올려서,
+  마감일이 지나는 순간 "10회째 독촉"처럼 부풀려진 숫자가 표시됐다.
 
 필요:  pip install requests slack_sdk
 환경변수:
@@ -174,7 +179,7 @@ def prop_number(page, name):
 
 
 def increment_count(page, current):
-    """이 행의 '독촉 횟수'를 +1 해서 Notion에 저장. (실제 발송 때만 호출)"""
+    """이 행의 '독촉 횟수'를 +1 해서 Notion에 저장. (마감 초과 건 실제 발송 때만 호출)"""
     page_id = page["id"]
     r = requests.patch(
         f"https://api.notion.com/v1/pages/{page_id}",
@@ -186,6 +191,21 @@ def increment_count(page, current):
 
 def days_until(deadline_str):
     return (datetime.fromisoformat(deadline_str).date() - date.today()).days
+
+
+# ---------------------------------------------------------------- 분류
+def split_by_deadline(rows_with_todo):
+    """마감 전(upcoming) / 마감 초과(overdue)로 분류.
+
+    메시지 작성과 '독촉 횟수' 증가가 같은 기준을 쓰도록 함수로 분리했다.
+    마감일이 비어 있으면 마감 전으로 취급한다.
+    """
+    upcoming, overdue = [], []
+    for page, todo in rows_with_todo:
+        deadline = prop_date(page, P_DEADLINE)
+        d = days_until(deadline) if deadline else 0
+        (overdue if d < 0 else upcoming).append((page, todo))
+    return upcoming, overdue
 
 
 # ---------------------------------------------------------------- 문구
@@ -225,12 +245,7 @@ def _fmt_date(deadline):
 
 
 def build_channel_message(rows_with_todo):
-    # 마감 전(upcoming) / 마감 초과(overdue)로 분류
-    upcoming, overdue = [], []
-    for page, todo in rows_with_todo:
-        deadline = prop_date(page, P_DEADLINE)
-        d = days_until(deadline) if deadline else 0
-        (overdue if d < 0 else upcoming).append((page, todo))
+    upcoming, overdue = split_by_deadline(rows_with_todo)
 
     lines = ["📋 *논문 자료 취합 리마인더*", ""]
 
@@ -250,7 +265,7 @@ def build_channel_message(rows_with_todo):
             lines.append("    " + "   ".join(marks))
         lines.append("")
 
-    # ⏳ 마감 전 — 학회 단위로 묶어서 간단히 안내
+    # ⏳ 마감 전 — 학회 단위로 묶어서 간단히 안내 (독촉 횟수 증가 없음)
     if upcoming:
         lines.append("⏳ *마감 예정*")
         groups = {}  # (venue, deadline) -> [who, ...]
@@ -293,7 +308,9 @@ def main():
 
     # 하나라도 미완인 행만 추림
     pending = [(page, todo) for page in rows if (todo := pending_items(page))]
-    print(f"전체 {len(rows)}건 중 미완 {len(pending)}건\n")
+    upcoming, overdue = split_by_deadline(pending)
+    print(f"전체 {len(rows)}건 중 미완 {len(pending)}건 "
+          f"(마감 초과 {len(overdue)}건 / 마감 예정 {len(upcoming)}건)\n")
 
     if not pending:
         print("모두 제출완료 — 알림 보낼 것 없음 ✅")
@@ -304,9 +321,10 @@ def main():
     print(f"독촉이 단계: lv{level}")
     send(CHANNEL, build_channel_message(pending), image_url=img)
 
-    # 실제 발송했을 때만 독촉 횟수 +1 (DRY_RUN은 카운트 안 올림)
+    # 실제 발송했을 때만, 그리고 '마감 초과' 건만 독촉 횟수 +1
+    # (마감 예정은 안내일 뿐이므로 독촉으로 세지 않는다)
     if not DRY_RUN:
-        for page, _ in pending:
+        for page, _ in overdue:
             increment_count(page, prop_number(page, P_COUNT))
 
 
