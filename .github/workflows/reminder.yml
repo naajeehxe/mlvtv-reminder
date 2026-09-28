@@ -5,6 +5,9 @@ on:
     - cron: "0 0 * * 1"   # 매주 월요일 UTC 00:00 = 한국시간 월요일 오전 9시
   workflow_dispatch: {}     # Actions 탭에서 버튼으로 수동 실행(테스트용)
 
+permissions:
+  contents: write           # keepalive 커밋을 위해 필요
+
 jobs:
   remind:
     runs-on: ubuntu-latest
@@ -20,3 +23,11 @@ jobs:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+
+      # 60일 무활동 시 스케줄 자동정지되는 것 방지: 매 실행마다 빈 커밋 하나
+      - name: keepalive commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git commit --allow-empty -m "keepalive: $(date -u +%Y-%m-%d)"
+          git push

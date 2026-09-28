@@ -1,16 +1,9 @@
 """
-MLVTV 영상 제출 독촉 봇 (v6)
+MLVTV 영상 제출 독촉 봇 (v4)
 - 상태가 '제출완료'가 아닌 행을 모아 #general_student 채널에 '미제출 현황' 1개 글로 게시
 - 각 줄에 @멘션 + 얼마나 밀렸는지(예: 3주 경과 / 마감 2일 전) 표시
 - 매주 실행하도록 스케줄하면 => 제출완료 될 때까지 매주 리마인드
 - DRY_RUN=1 이면 슬랙에 아무것도 안 올리고 터미널에만 미리보기 출력
-
-v6 변경점:
-  발표 자료 양식(Notion) 링크 안내 문구 추가.
-v5 변경점:
-  '독촉 횟수'를 마감 초과(overdue) 건에만 +1 한다.
-  이전 버전은 마감 예정(안내만 한 건)까지 카운트를 올려서,
-  마감일이 지나는 순간 "10회째 독촉"처럼 부풀려진 숫자가 표시됐다.
 
 필요:  pip install requests slack_sdk
 환경변수:
@@ -38,7 +31,6 @@ CHANNEL = os.environ["SLACK_CHANNEL_ID"]  # #general_student 채널 ID (C...)
 # 문구에 넣을 링크 (여기만 바꾸면 됨)
 MYBOX_LINK = "https://mybox.naver.com/main/web/shared?resourceKey=aGtpbWN2bWx8MzQ3MjUzMjEzODk2MjkyNDM2MXxEfDEzMzY3Mzcw"
 NOTION_LINK = "https://www.notion.so/325a6dfcb578468d8f2d474c3f9c8cd5?v=2c966beed4be4920b76169d61e207383"
-TEMPLATE_LINK = "https://www.notion.so/mlvku/265587eaf1a28248a04d01bcf176c8d7?source=copy_link#f0f587eaf1a282b3a242018b27a66187"
 
 # 독촉이 3단계 캐릭터 이미지 (GitHub raw URL로 교체하세요)
 DOKCHOK_IMG = {
@@ -70,6 +62,12 @@ P_ASSIGNEE = "담당자"
 P_VENUE = "학회"
 P_COUNT = "독촉 횟수"
 STATUS_DONE = "제출 완료"
+# '더 이상 챙기지 않음'으로 볼 상태들 (졸업생 등 제외)
+DONE_STATUSES = {"제출 완료", "졸업"}
+
+
+def is_done(page, prop):
+    return prop_text(page, prop) in DONE_STATUSES
 
 # 체크할 제출 항목: (표시이름, Notion 속성명)
 DELIVERABLES = [
@@ -152,7 +150,7 @@ def pending_items(page):
     """이 행에서 아직 '제출완료'가 아닌 항목 이름 목록. 예: ['영상', 'poster PDF']"""
     todo = []
     for label, prop in DELIVERABLES:
-        if prop_text(page, prop) != STATUS_DONE:
+        if not is_done(page, prop):
             todo.append(label)
     return todo
 
@@ -182,7 +180,7 @@ def prop_number(page, name):
 
 
 def increment_count(page, current):
-    """이 행의 '독촉 횟수'를 +1 해서 Notion에 저장. (마감 초과 건 실제 발송 때만 호출)"""
+    """이 행의 '독촉 횟수'를 +1 해서 Notion에 저장. (실제 발송 때만 호출)"""
     page_id = page["id"]
     r = requests.patch(
         f"https://api.notion.com/v1/pages/{page_id}",
@@ -194,21 +192,6 @@ def increment_count(page, current):
 
 def days_until(deadline_str):
     return (datetime.fromisoformat(deadline_str).date() - date.today()).days
-
-
-# ---------------------------------------------------------------- 분류
-def split_by_deadline(rows_with_todo):
-    """마감 전(upcoming) / 마감 초과(overdue)로 분류.
-
-    메시지 작성과 '독촉 횟수' 증가가 같은 기준을 쓰도록 함수로 분리했다.
-    마감일이 비어 있으면 마감 전으로 취급한다.
-    """
-    upcoming, overdue = [], []
-    for page, todo in rows_with_todo:
-        deadline = prop_date(page, P_DEADLINE)
-        d = days_until(deadline) if deadline else 0
-        (overdue if d < 0 else upcoming).append((page, todo))
-    return upcoming, overdue
 
 
 # ---------------------------------------------------------------- 문구
@@ -248,7 +231,12 @@ def _fmt_date(deadline):
 
 
 def build_channel_message(rows_with_todo):
-    upcoming, overdue = split_by_deadline(rows_with_todo)
+    # 마감 전(upcoming) / 마감 초과(overdue)로 분류
+    upcoming, overdue = [], []
+    for page, todo in rows_with_todo:
+        deadline = prop_date(page, P_DEADLINE)
+        d = days_until(deadline) if deadline else 0
+        (overdue if d < 0 else upcoming).append((page, todo))
 
     lines = ["📋 *논문 자료 취합 리마인더*", ""]
 
@@ -263,12 +251,12 @@ def build_channel_message(rows_with_todo):
             venue_tag = f"*[{venue}]* " if venue else ""
             lines.append(f"{_who_label(page)}  {venue_tag}{title} "
                          f"({status_label(deadline)} · 🔴 {count}회째 독촉)")
-            marks = [f"{'✅' if prop_text(page, prop) == STATUS_DONE else '❌'} {label}"
+            marks = [f"{'✅' if is_done(page, prop) else '❌'} {label}"
                      for label, prop in DELIVERABLES]
             lines.append("    " + "   ".join(marks))
         lines.append("")
 
-    # ⏳ 마감 전 — 학회 단위로 묶어서 간단히 안내 (독촉 횟수 증가 없음)
+    # ⏳ 마감 전 — 학회 단위로 묶어서 간단히 안내
     if upcoming:
         lines.append("⏳ *마감 예정*")
         groups = {}  # (venue, deadline) -> [who, ...]
@@ -285,7 +273,6 @@ def build_channel_message(rows_with_todo):
     lines.append(f"영상(pptx에 녹화를 첨부하여 제출)·코드·poster PDF를 "
                  f"<{MYBOX_LINK}|Mybox>에 업로드한 뒤, 반드시 "
                  f"<{NOTION_LINK}|Notion>에서 상태를 *`제출 완료`* 로 변경해야 합니다.")
-    lines.append(f"발표 자료 양식은 <{TEMPLATE_LINK}|링크>를 참고해 주세요.")
     lines.append("_제출 완료로 변경하지 않으면 완료될 때까지 매주 리마인더가 발송됩니다._")
     return "\n".join(lines)
 
@@ -312,9 +299,7 @@ def main():
 
     # 하나라도 미완인 행만 추림
     pending = [(page, todo) for page in rows if (todo := pending_items(page))]
-    upcoming, overdue = split_by_deadline(pending)
-    print(f"전체 {len(rows)}건 중 미완 {len(pending)}건 "
-          f"(마감 초과 {len(overdue)}건 / 마감 예정 {len(upcoming)}건)\n")
+    print(f"전체 {len(rows)}건 중 미완 {len(pending)}건\n")
 
     if not pending:
         print("모두 제출완료 — 알림 보낼 것 없음 ✅")
@@ -325,10 +310,9 @@ def main():
     print(f"독촉이 단계: lv{level}")
     send(CHANNEL, build_channel_message(pending), image_url=img)
 
-    # 실제 발송했을 때만, 그리고 '마감 초과' 건만 독촉 횟수 +1
-    # (마감 예정은 안내일 뿐이므로 독촉으로 세지 않는다)
+    # 실제 발송했을 때만 독촉 횟수 +1 (DRY_RUN은 카운트 안 올림)
     if not DRY_RUN:
-        for page, _ in overdue:
+        for page, _ in pending:
             increment_count(page, prop_number(page, P_COUNT))
 
 
